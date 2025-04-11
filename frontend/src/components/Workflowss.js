@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Modal, Button, Form, Alert, Spinner, Badge } from 'react-bootstrap';
 import './workflow.css';
+const token = localStorage.getItem("token");
 
 const Workflowss = () => {
   // États principaux
@@ -36,8 +37,16 @@ const Workflowss = () => {
     const fetchData = async () => {
       try {
         const [tasksRes, usersRes] = await Promise.all([
-          axios.get('http://localhost:5000/api/tasks'),
-          axios.get('http://localhost:5000/api/users')
+            axios.get('http://localhost:5000/api/tasks', {
+                headers: {
+                  Authorization: `Bearer ${token}`, // Ajouter le token dans l'en-tête
+                },
+              }),
+              axios.get('http://localhost:5000/api/auth/login', {
+                headers: {
+                  Authorization: `Bearer ${token}`, // Ajouter le token dans l'en-tête
+                },
+              }),
         ]);
         setTasks(tasksRes.data);
         setUsers(usersRes.data);
@@ -55,7 +64,11 @@ const Workflowss = () => {
   // Gestion des tâches
   const fetchTasks = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/tasks');
+      const res = await axios.get('http://localhost:5000/api/tasks', {
+  headers: {
+    Authorization: `Bearer ${token}`,
+  },
+});
       setTasks(res.data);
     } catch (err) {
       setError('Erreur de rafraîchissement des tâches');

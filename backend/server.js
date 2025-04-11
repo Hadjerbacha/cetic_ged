@@ -1,35 +1,21 @@
-const express = require('express');
-const cors = require('cors');
-const userRoutes = require('./routes/user');
-const taskRoutes = require('./routes/task');
-const { auth } = require('./middleware/auth');
-require('dotenv').config();
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+
+const authRoutes = require("./routes/auth");
+const workflowsRoutes = require("./routes/workflow");
 
 const app = express();
-const port = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5000;
 
 // Middleware
-app.use(cors({
-  origin: 'http://localhost:3000',
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use('/uploads', express.static('uploads'));
 
-// Routes publiques
-app.use('/api/auth', userRoutes);
+// Routes
+app.use("/api/auth", authRoutes);
+app.use("/api/tasks", workflowsRoutes);
 
-// Routes protégées
-app.use('/api/tasks', auth, taskRoutes);
-
-// Middleware de gestion des erreurs
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Erreur serveur' });
-});
-
-// Démarrer le serveur
-app.listen(port, () => {
-  console.log(`Serveur démarré sur http://localhost:${port}`);
-});
+// Lancement du serveur
+app.listen(PORT, () => console.log(`Serveur lancé sur le port ${PORT}`));

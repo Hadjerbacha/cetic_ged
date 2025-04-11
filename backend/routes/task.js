@@ -1,4 +1,3 @@
-// routes/task.js
 const express = require('express');
 const { Pool } = require('pg');
 const multer = require('multer');
@@ -6,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { auth } = require('../middleware/auth');
 const router = express.Router();
+
 const pool = new Pool({
   user: process.env.PG_USER || 'postgres',
   host: process.env.PG_HOST || 'localhost',
@@ -32,10 +32,10 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }
+  limits: { fileSize: 10 * 1024 * 1024 } // Limite de 10 Mo
 });
 
-// Initialisation de la base de données
+// Initialisation de la table tasks
 async function initializeDatabase() {
   try {
     await pool.query(`
@@ -47,102 +47,154 @@ async function initializeDatabase() {
         priority VARCHAR(50) NOT NULL,
         file_path VARCHAR(255),
         notify BOOLEAN DEFAULT false,
-        created_at TIMESTAMP DEFAULT NOW()
+        created_at TIMESTAMP DEFAULT NOW(),
+        assigned_to INTEGER[],
+        assigned_by INTEGER,
+        assignment_note TEXT,
+        assigned_at TIMESTAMP,
+        status VARCHAR(50) DEFAULT 'pending'
       );
     `);
-    console.log('Tables de la base de données initialisées');
+    
+    // Ajouter la contrainte de clé étrangère si la table users existe
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
+          ALTER TABLE tasks 
+          ADD CONSTRAINT tasks_assigned_by_fkey 
+          FOREIGN KEY (assigned_by) REFERENCES users(id);
+        END IF;
+      END $$;
+    `);
+    
+    console.log('Table tasks initialisée avec succès');
   } catch (err) {
-    console.error('Erreur d\'initialisation de la base:', err.stack);
+    console.error('Erreur lors de l\'initialisation de tasks:', err.stack);
   }
 }
 
 // Routes
-router.post('/', upload.single('file'), async (req, res) => {
+
+// Créer une tâche
+router.post('/', auth, upload.single('file'), async (req, res) => {
   const { title, description, due_date, priority, notify } = req.body;
   const file_path = req.file ? `/uploads/${req.file.filename}` : null;
 
   try {
     const query = `
-      INSERT INTO tasks (title, description, due_date, priority, file_path, notify)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO tasks (
+        title, description, due_date, priority, 
+        file_path, notify, assigned_by
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING *;
     `;
-    const values = [title, description, due_date, priority, file_path, notify];
+    const values = [
+      title, description, due_date, priority, 
+      file_path, notify, req.user.id
+    ];
 
     const result = await pool.query(query, values);
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error('Erreur lors de l\'ajout de la tâche:', err.stack);
-    if (req.file) {
-      fs.unlink(req.file.path, () => {});
-    }
+    console.error('Erreur:', err.stack);
+    if (req.file) fs.unlink(req.file.path, () => {});
     res.status(500).json({ 
-      error: 'Erreur lors de l\'ajout de la tâche',
+      error: 'Erreur serveur', 
       details: err.message 
     });
   }
 });
 
-router.get('/', async (req, res) => {
-  console.log('Tentative de récupération des tâches...');
-  try {
-    const result = await pool.query(`
-      SELECT 
-        id,
-        title,
-        description,
-        due_date,
-        priority,
-        file_path,
-        notify,
-        created_at
-      FROM tasks 
-      ORDER BY created_at DESC
-    `);
-    console.log('Résultats de la requête:', result.rows);
-    res.status(200).json(result.rows);
-  } catch (err) {
-    console.error('ERREUR COMPLÈTE:', err);
-    console.error('Stack trace:', err.stack);
-    res.status(500).json({ 
-      error: 'Erreur serveur',
-      details: err.message,
-      fullError: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    });
-  }
-});
+// Assigner une tâche
+router.post('/assign-task', auth, upload.single('file'), async (req, res) => {
+  const { note, notify, assigned_to } = req.body;
+  const file_path = req.file ? `/uploads/${req.file.filename}` : null;
+  let userIds;
 
-// Ajoutez cette route à votre fichier task.js
-router.post('/assign', auth, async (req, res) => {
-  const { taskId, userIds, note } = req.body;
-  
   try {
-    // Vérifier que l'utilisateur existe
-    const userCheck = await pool.query('SELECT id FROM users WHERE id = ANY($1::int[])', [userIds]);
+    userIds = JSON.parse(assigned_to);
+    if (!Array.isArray(userIds)) {
+      return res.status(400).json({ error: 'assigned_to doit être un tableau' });
+    }
+  } catch (err) {
+    return res.status(400).json({ error: 'Format invalide pour assigned_to' });
+  }
+
+  try {
+    // Vérifier que les utilisateurs existent
+    const userCheck = await pool.query(
+      'SELECT id FROM users WHERE id = ANY($1::int[])', 
+      [userIds]
+    );
+    
     if (userCheck.rows.length !== userIds.length) {
       return res.status(400).json({ error: 'Un ou plusieurs utilisateurs non trouvés' });
     }
 
-    // Assigner la tâche
+    // Créer la tâche assignée
     const query = `
-      UPDATE tasks 
-      SET assigned_to = $1, 
-          assigned_by = $2,
-          assignment_note = $3,
-          assigned_at = NOW()
-      WHERE id = $4
+      INSERT INTO tasks (
+        title, description, due_date, priority, 
+        file_path, notify, assigned_to, 
+        assigned_by, assignment_note, status
+      )
+      VALUES (
+        'Tâche assignée', $1, NOW()::date + INTERVAL '7 days', 
+        'Normale', $2, $3, $4, $5, $1, 'assigned'
+      )
       RETURNING *;
     `;
-    const values = [userIds, req.user.id, note, taskId];
-    const result = await pool.query(query, values);
+    const values = [
+      note, file_path, notify, userIds, req.user.id
+    ];
 
+    const result = await pool.query(query, values);
     res.status(200).json(result.rows[0]);
   } catch (err) {
-    console.error('Erreur assignation:', err);
-    res.status(500).json({ error: 'Erreur serveur' });
+    console.error('Erreur:', err.stack);
+    if (req.file) fs.unlink(req.file.path, () => {});
+    res.status(500).json({ 
+      error: 'Erreur serveur', 
+      details: err.message 
+    });
   }
 });
-// Initialisation au chargement du module
+
+// Récupérer toutes les tâches
+router.get('/', auth, async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        t.id,
+        t.title,
+        t.description,
+        t.due_date,
+        t.priority,
+        t.file_path,
+        t.notify,
+        t.created_at,
+        t.assigned_to,
+        t.assigned_at,
+        t.status,
+        u.username as assigned_by_name
+      FROM tasks t
+      LEFT JOIN users u ON t.assigned_by = u.id
+      ORDER BY t.created_at DESC
+    `;
+    const result = await pool.query(query);
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('Erreur:', err.stack);
+    res.status(500).json({ 
+      error: 'Erreur serveur',
+      details: err.message 
+    });
+  }
+});
+
+// Initialisation au démarrage
 initializeDatabase();
 
 module.exports = router;
