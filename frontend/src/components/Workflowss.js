@@ -88,7 +88,7 @@ const Workflowss = () => {
 
     try {
       await axios.post('http://localhost:5000/api/tasks', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${token}` }
       });
       await fetchTasks();
       setShowTaskModal(false);
@@ -119,7 +119,12 @@ const Workflowss = () => {
     formData.append('assigned_to', JSON.stringify(assignForm.selectedUsers.map(u => u.id)));
 
     try {
-      await axios.post('http://localhost:5000/api/assign-task', formData);
+      await axios.post('http://localhost:5000/api/assign-task', formData, {
+  headers: { 
+    'Content-Type': 'multipart/form-data',
+    Authorization: `Bearer ${token}`
+  }
+});
       await fetchTasks();
       setShowAssignModal(false);
       setAssignForm({
@@ -155,7 +160,7 @@ const Workflowss = () => {
 
   // Filtrage des utilisateurs
   const filteredUsers = users.filter(user =>
-    user.username.toLowerCase().includes(assignForm.searchUser.toLowerCase()) ||
+    user.name.toLowerCase().includes(assignForm.searchUser.toLowerCase()) ||
     user.role.toLowerCase().includes(assignForm.searchUser.toLowerCase())
   );
 

@@ -42,7 +42,7 @@ const login = async (req, res) => {
 
 
 const register = async (req, res) => {
-  const { name, email, password, role = "employe" } = req.body;
+  const { name, prenom, email, password, role = "employe" } = req.body;
   console.log("Reçu :", req.body);
   try {
     const existingUser = await findUserByEmail(email);
@@ -55,6 +55,7 @@ const register = async (req, res) => {
 
     const newUser = await createUser({
       name,
+      prenom,
       email,
       password: hashedPassword,
       role,
