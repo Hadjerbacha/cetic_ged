@@ -194,6 +194,23 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
+
+app.delete('/:id', async (req, res) => {
+  const taskId = parseInt(req.params.id, 10);
+  try {
+    const result = await pool.query('DELETE FROM tasks WHERE id = $1 RETURNING *', [taskId]);
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'Tâche non trouvée' });
+    }
+    res.json({ message: 'Tâche supprimée' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Erreur serveur' });
+  }
+});
+
+
+
 // Initialisation au démarrage
 initializeDatabase();
 

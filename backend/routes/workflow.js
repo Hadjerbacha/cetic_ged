@@ -102,4 +102,93 @@ router.get('/', async (req, res) => {
   }
 });
 
+  const winston = require('winston');
+
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.File({ filename: 'error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'combined.log' }),
+  ],
+});
+
+// ➕ Ajouter une tâche
+router.post('/', upload.single('file'), async (req, res) => {
+  const { title, description, due_date, priority, notify } = req.body;
+  const file_path = req.file ? `/uploads/${req.file.filename}` : null;
+  try {
+    const result = await pool.query(
+      `INSERT INTO tasks 
+        (title, description, due_date, priority, file_path, notify) 
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [title, description, due_date, priority, file_path, notify === 'true']
+    );
+    logger.info(`Task created: ${title}`);
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    logger.error(`Error creating task: ${err.message}`);
+    if (req.file) fs.unlink(req.file.path, () => {});
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔁 Assigner une tâche
+router.post('/assign-task', upload.single('file'), async (req, res) => {
+  const { note, notify, assigned_to } = req.body;
+  let userIds;
+  try {
+    userIds = JSON.parse(assigned_to);
+    if (!Array.isArray(userIds)) throw new Error();
+  } catch {
+    logger.error(`Invalid assigned_to: ${assigned_to}`);
+    return res.status(400).json({ error: 'assigned_to doit être un tableau JSON.' });
+  }
+  const file_path = req.file ? `/uploads/${req.file.filename}` : null;
+  try {
+    const result = await pool.query(
+      `INSERT INTO tasks 
+        (title, description, due_date, priority, file_path, notify, assigned_to, assignment_note, assigned_at, status)
+       VALUES 
+        ('Tâche assignée', $1, NOW()::date + INTERVAL '7 days', 'Normale', $2, $3, $4, $1, NOW(), 'assigned')
+       RETURNING *`,
+      [note, file_path, notify === 'true', userIds]
+    );
+    logger.info(`Task assigned: ${note}`);
+    res.status(200).json(result.rows[0]);
+  } catch (err) {
+    logger.error(`Error assigning task: ${err.message}`);
+    if (req.file) fs.unlink(req.file.path, () => {});
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 📥 Récupérer toutes les tâches
+router.get('/', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM tasks ORDER BY created_at DESC');
+    logger.info(`Tasks retrieved`);
+    res.status(200).json(result.rows);
+  } catch (err) {
+    logger.error(`Error retrieving tasks: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/:id', async (req, res) => {
+  const taskId = parseInt(req.params.id, 10);
+  try {
+    const result = await pool.query('DELETE FROM tasks WHERE id = $1 RETURNING *', [taskId]);
+    if (result.rowCount === 0) {
+      logger.error(`Task not found: ${taskId}`);
+      return res.status(404).json({ message: 'Tâche non trouvée' });
+    }
+    logger.info(`Task deleted: ${taskId}`);
+    res.json({ message: 'Tâche supprimée' });
+  } catch (err) {
+    logger.error(`Error deleting task: ${err.message}`);
+    console.error(err);
+    res.status(500).json({ message: 'Erreur serveur' });
+  }
+});
 module.exports = router;

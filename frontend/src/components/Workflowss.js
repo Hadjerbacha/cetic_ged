@@ -1,416 +1,285 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Modal, Button, Form, Alert, Spinner, Badge } from 'react-bootstrap';
-import './workflow.css';
-const token = localStorage.getItem("token");
+import { Modal, Button, Form, Table, Pagination } from 'react-bootstrap';
+import Select from 'react-select';
 
 const Workflowss = () => {
-  // États principaux
+  const [showModal, setShowModal] = useState(false);
+  const [modalType, setModalType] = useState('new');
   const [tasks, setTasks] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  // États pour la modal de création de tâche
-  const [showTaskModal, setShowTaskModal] = useState(false);
-  const [taskForm, setTaskForm] = useState({
+  const [formData, setFormData] = useState({
     title: '',
     description: '',
     due_date: '',
-    priority: 'Normale',
+    priority: '',
+    assigned_to: [],
     file: null,
-    notify: false
+    notify: false,
+    assignment_note: ''
   });
+  const [searchTerm, setSearchTerm] = useState('');
+  const [users, setUsers] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const tasksPerPage = 5;
 
-  // États pour la modal d'assignation
-  const [showAssignModal, setShowAssignModal] = useState(false);
-  const [assignForm, setAssignForm] = useState({
-    document: null,
-    note: '',
-    selectedUsers: [],
-    searchUser: '',
-    sendNotification: false
-  });
-
-  // Chargement initial des données
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [tasksRes, usersRes] = await Promise.all([
-            axios.get('http://localhost:5000/api/tasks', {
-                headers: {
-                  Authorization: `Bearer ${token}`, // Ajouter le token dans l'en-tête
-                },
-              }),
-              axios.get('http://localhost:5000/api/auth/users', {
-                headers: {
-                  Authorization: `Bearer ${token}`, // Ajouter le token dans l'en-tête
-                },
-              }),
-        ]);
-        setTasks(tasksRes.data);
-        setUsers(usersRes.data);
-      } catch (err) {
-        setError('Erreur de chargement des données');
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
+    fetchTasks();
+    fetchUsers();
   }, []);
 
-  // Gestion des tâches
   const fetchTasks = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/tasks', {
-  headers: {
-    Authorization: `Bearer ${token}`,
-  },
-});
-      setTasks(res.data);
+      const response = await axios.get('http://localhost:5000/api/tasks');
+      setTasks(response.data);
     } catch (err) {
-      setError('Erreur de rafraîchissement des tâches');
+      console.error('Erreur de chargement des tâches', err);
     }
   };
 
-  const handleTaskSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-
-    const formData = new FormData();
-    Object.entries(taskForm).forEach(([key, value]) => {
-      if (value !== null && value !== undefined) {
-        formData.append(key, value);
-      }
-    });
-
+  const fetchUsers = async () => {
     try {
-      await axios.post('http://localhost:5000/api/tasks', formData, {
-        headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${token}` }
-      });
-      await fetchTasks();
-      setShowTaskModal(false);
-      setTaskForm({
-        title: '',
-        description: '',
-        due_date: '',
-        priority: 'Normale',
-        file: null,
-        notify: false
-      });
-    } catch (err) {
-      setError(err.response?.data?.error || 'Erreur de création');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Gestion de l'assignation
-  const handleAssignSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-
-    const formData = new FormData();
-    formData.append('file', assignForm.document);
-    formData.append('note', assignForm.note);
-    formData.append('notify', assignForm.sendNotification);
-    formData.append('assigned_to', JSON.stringify(assignForm.selectedUsers.map(u => u.id)));
-
-    try {
-      await axios.post('http://localhost:5000/api/assign-task', formData, {
-  headers: { 
-    'Content-Type': 'multipart/form-data',
-    Authorization: `Bearer ${token}`
-  }
-});
-      await fetchTasks();
-      setShowAssignModal(false);
-      setAssignForm({
-        document: null,
-        note: '',
-        selectedUsers: [],
-        searchUser: '',
-        sendNotification: false
-      });
-    } catch (err) {
-      setError(err.response?.data?.error || 'Erreur d\'assignation');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleUserSelect = (user) => {
-    if (!assignForm.selectedUsers.some(u => u.id === user.id)) {
-      setAssignForm(prev => ({
-        ...prev,
-        selectedUsers: [...prev.selectedUsers, user],
-        searchUser: ''
+      const response = await axios.get('http://localhost:5000/api/auth/users');
+      const formattedUsers = response.data.map(user => ({
+        label: `${user.name} ${user.prenom}`,
+        value: user.id
       }));
+      setUsers(formattedUsers);
+    } catch (err) {
+      console.error('Erreur de chargement des utilisateurs', err);
     }
   };
 
-  const handleUserRemove = (userId) => {
-    setAssignForm(prev => ({
-      ...prev,
-      selectedUsers: prev.selectedUsers.filter(u => u.id !== userId)
-    }));
+  const handleInputChange = e => {
+    const { name, value, type, checked, files } = e.target;
+    if (type === 'checkbox') {
+      setFormData({ ...formData, [name]: checked });
+    } else if (type === 'file') {
+      setFormData({ ...formData, file: files[0] });
+    } else {
+      setFormData({ ...formData, [name]: value });
+    }
   };
 
-  // Filtrage des utilisateurs
-  const filteredUsers = users.filter(user =>
-    user.name.toLowerCase().includes(assignForm.searchUser.toLowerCase()) ||
-    user.role.toLowerCase().includes(assignForm.searchUser.toLowerCase())
+  const handleModalOpen = type => {
+    setModalType(type);
+    setShowModal(true);
+  };
+
+  const handleModalClose = () => {
+    setShowModal(false);
+    setFormData({
+      title: '',
+      description: '',
+      due_date: '',
+      priority: '',
+      assigned_to: [],
+      file: null,
+      notify: false,
+      assignment_note: ''
+    });
+  };
+
+  const handleSubmit = async e => {
+    e.preventDefault();
+    const data = new FormData();
+
+    if (modalType === 'new') {
+      data.append('title', formData.title);
+      data.append('description', formData.description);
+      data.append('due_date', formData.due_date);
+      data.append('priority', formData.priority);
+      data.append('assigned_to', formData.assigned_to);
+    } else {
+      data.append('assignment_note', formData.assignment_note);
+      data.append('assigned_to', JSON.stringify(formData.assigned_to));
+    }
+
+    if (formData.file) data.append('file', formData.file);
+    data.append('notify', formData.notify);
+
+    try {
+      const endpoint = modalType === 'new' ? 'http://localhost:5000/api/tasks' : 'http://localhost:5000/api/assign-task';
+      await axios.post(endpoint, data, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      fetchTasks();
+      handleModalClose();
+    } catch (err) {
+      console.error("Erreur lors de l'envoi du formulaire :", err);
+    }
+  };
+
+  const handleSelectChange = selectedOptions => {
+    setFormData({ ...formData, assigned_to: selectedOptions.map(option => option.value) });
+  };
+
+  const filteredTasks = tasks.filter(task =>
+    task.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  if (loading) {
-    return (
-      <div className="d-flex justify-content-center mt-5">
-        <Spinner animation="border" role="status">
-          <span className="visually-hidden">Chargement...</span>
-        </Spinner>
-      </div>
-    );
-  }
+  const indexOfLastTask = currentPage * tasksPerPage;
+  const indexOfFirstTask = indexOfLastTask - tasksPerPage;
+  const currentTasks = filteredTasks.slice(indexOfFirstTask, indexOfLastTask);
 
+  const paginate = pageNumber => setCurrentPage(pageNumber);
+
+  const handleDelete = async (taskId) => {
+    // Confirmation de suppression
+    const confirmDelete = window.confirm("Êtes-vous sûr de vouloir supprimer cette tâche ?");
+    
+    if (confirmDelete) {
+      try {
+        // Suppression de la tâche avec axios
+        await axios.delete(`http://localhost:5000/api/tasks/${taskId}`);
+        alert('Tâche supprimée avec succès !');
+        fetchTasks(); // Recharger les tâches après suppression
+      } catch (err) {
+        console.error("Erreur lors de la suppression de la tâche", err);
+        alert("Une erreur est survenue lors de la suppression de la tâche.");
+      }
+    }
+  };
+  
+  
   return (
-    <div className="container mt-5">
+    <div className="container mt-4">
       <h2 className="mb-4">Gestion des Workflows</h2>
 
-      {error && (
-        <Alert variant="danger" onClose={() => setError(null)} dismissible>
-          {error}
-        </Alert>
-      )}
-
-      <Form.Group className="mb-3">
-        <Form.Label>Choisir une action :</Form.Label>
-        <Form.Select onChange={(e) => {
-          const action = e.target.value;
-          if (action === 'new') setShowTaskModal(true);
-          if (action === 'assign') setShowAssignModal(true);
-        }}>
-          <option value="">-- Sélectionner --</option>
+      <div className="d-flex justify-content-between mb-3">
+        <Form.Select
+          onChange={e => handleModalOpen(e.target.value)}
+          className="w-auto"
+        >
+          <option>-- Choisir une action --</option>
           <option value="new">Nouvelle tâche</option>
-          <option value="assign">Assigner une tâche</option>
+          <option value="assign">Assigner tâche</option>
         </Form.Select>
-      </Form.Group>
 
-      {/* Modal de création de tâche */}
-      <Modal show={showTaskModal} onHide={() => setShowTaskModal(false)}>
+        <Form.Control
+          type="text"
+          placeholder="Rechercher une tâche"
+          className="w-25"
+          onChange={e => setSearchTerm(e.target.value)}
+        />
+      </div>
+
+      {/* Tableau des tâches */}
+      <Table striped bordered hover>
+        <thead>
+          <tr>
+            <th>Titre</th>
+            <th>Description</th>
+            <th>Échéance</th>
+            <th>Priorité</th>
+            <th>Fichier</th>
+            <th>Statut</th>
+            <th>Assignée à</th>
+            <th>Assignée par</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {currentTasks.map(task => (
+            <tr key={task.id}>
+              <td>{task.title}</td>
+              <td>{task.description}</td>
+              <td>{new Date(task.due_date).toLocaleDateString()}</td>
+              <td>{task.priority}</td>
+              <td>
+                {task.file_path && (
+                  <a href={`http://localhost:5000/${task.file_path}`} target="_blank" rel="noreferrer">
+                    Voir le fichier
+                  </a>
+                )}
+              </td>
+              <td>{task.status}</td>
+              <td>{task.assigned_to}</td>
+              <td>{task.assigned_by}</td>
+              <td>
+                <Button variant="warning" onClick={() => handleModalOpen('edit', task)}>Modifier</Button>
+                <Button variant="danger" onClick={() => handleDelete(task.id)} className="ml-2">Supprimer</Button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+
+      <Pagination>
+        {Array.from({ length: Math.ceil(filteredTasks.length / tasksPerPage) }, (_, i) => (
+          <Pagination.Item key={i + 1} onClick={() => paginate(i + 1)} active={i + 1 === currentPage}>
+            {i + 1}
+          </Pagination.Item>
+        ))}
+      </Pagination>
+
+      {/* Modal d'ajout / assignation */}
+      <Modal show={showModal} onHide={handleModalClose}>
         <Modal.Header closeButton>
-          <Modal.Title>Nouvelle Tâche</Modal.Title>
+          <Modal.Title>{modalType === 'new' ? 'Nouvelle tâche' : 'Assigner une tâche'}</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          <Form onSubmit={handleTaskSubmit}>
-            <Form.Group className="mb-3">
-              <Form.Label>Titre *</Form.Label>
-              <Form.Control
-                type="text"
-                name="title"
-                value={taskForm.title}
-                onChange={(e) => setTaskForm({...taskForm, title: e.target.value})}
-                required
-              />
-            </Form.Group>
-            
-            <Form.Group className="mb-3">
-              <Form.Label>Description</Form.Label>
-              <Form.Control
-                as="textarea"
-                rows={3}
-                name="description"
-                value={taskForm.description}
-                onChange={(e) => setTaskForm({...taskForm, description: e.target.value})}
-              />
-            </Form.Group>
-            
-            <Form.Group className="mb-3">
-              <Form.Label>Échéance *</Form.Label>
-              <Form.Control
-                type="date"
-                name="due_date"
-                value={taskForm.due_date}
-                onChange={(e) => setTaskForm({...taskForm, due_date: e.target.value})}
-                required
-              />
-            </Form.Group>
-            
-            <Form.Group className="mb-3">
-              <Form.Label>Priorité</Form.Label>
-              <Form.Select
-                name="priority"
-                value={taskForm.priority}
-                onChange={(e) => setTaskForm({...taskForm, priority: e.target.value})}
-              >
-                <option value="Haute">Haute</option>
-                <option value="Normale">Normale</option>
-                <option value="Basse">Basse</option>
-              </Form.Select>
-            </Form.Group>
-            
-            <Form.Group className="mb-3">
-              <Form.Label>Fichier</Form.Label>
-              <Form.Control
-                type="file"
-                onChange={(e) => setTaskForm({...taskForm, file: e.target.files[0]})}
-              />
-            </Form.Group>
-            
-            <Form.Group className="mb-3">
-              <Form.Check
-                type="checkbox"
-                label="Envoyer une notification par email"
-                name="notify"
-                checked={taskForm.notify}
-                onChange={(e) => setTaskForm({...taskForm, notify: e.target.checked})}
-              />
-            </Form.Group>
-            
-            <div className="d-flex justify-content-end">
-              <Button variant="secondary" className="me-2" onClick={() => setShowTaskModal(false)}>
-                Annuler
-              </Button>
-              <Button variant="success" type="submit" disabled={loading}>
-                {loading ? 'Enregistrement...' : 'Enregistrer'}
-              </Button>
-            </div>
-          </Form>
-        </Modal.Body>
-      </Modal>
+          <Form onSubmit={handleSubmit}>
+            {modalType === 'new' && (
+              <>
+                <Form.Group>
+                  <Form.Label>Titre</Form.Label>
+                  <Form.Control type="text" name="title" onChange={handleInputChange} required />
+                </Form.Group>
+                <Form.Group>
+                  <Form.Label>Description</Form.Label>
+                  <Form.Control as="textarea" name="description" onChange={handleInputChange} required />
+                </Form.Group>
+                <Form.Group>
+                  <Form.Label>Date d’échéance</Form.Label>
+                  <Form.Control type="date" name="due_date" onChange={handleInputChange} required />
+                </Form.Group>
+                <Form.Group>
+                  <Form.Label>Priorité</Form.Label>
+                  <Form.Select name="priority" onChange={handleInputChange}>
+                    <option value="">Choisir...</option>
+                    <option value="Haute">Haute</option>
+                    <option value="Moyenne">Moyenne</option>
+                    <option value="Basse">Basse</option>
+                  </Form.Select>
+                </Form.Group>
+              </>
+            )}
+            {modalType === 'assign' && (
+              <>
+                <Form.Group>
+                  <Form.Label>Note d’assignation</Form.Label>
+                  <Form.Control as="textarea" name="assignment_note" onChange={handleInputChange} />
+                </Form.Group>
+              </>
+            )}
 
-      {/* Modal d'assignation de tâche */}
-      <Modal show={showAssignModal} onHide={() => setShowAssignModal(false)} size="lg">
-        <Modal.Header closeButton>
-          <Modal.Title>Assigner une Tâche</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <Form onSubmit={handleAssignSubmit}>
-            <Form.Group className="mb-3">
-              <Form.Label>Document</Form.Label>
-              <Form.Control 
-                type="file" 
-                onChange={(e) => setAssignForm({...assignForm, document: e.target.files[0]})} 
+            <Form.Group>
+              <Form.Label>Assigner à</Form.Label>
+              <Select
+                isMulti
+                name="assigned_to"
+                options={users}
+                onChange={handleSelectChange}
+                closeMenuOnSelect={false}
+                placeholder="Rechercher un utilisateur"
               />
             </Form.Group>
 
-            <Form.Group className="mb-3">
-              <Form.Label>Rechercher un utilisateur</Form.Label>
-              <Form.Control
-                type="text"
-                placeholder="Nom ou rôle"
-                value={assignForm.searchUser}
-                onChange={(e) => setAssignForm({...assignForm, searchUser: e.target.value})}
-              />
-              <div className="user-list mt-2">
-                {filteredUsers.map(user => (
-                  <div key={user.id} className="user-list-item d-flex justify-content-between">
-                    <span>{user.username} ({user.role})</span>
-                    <Button 
-                      size="sm" 
-                      variant="outline-primary"
-                      onClick={() => handleUserSelect(user)}
-                    >
-                      Ajouter
-                    </Button>
-                  </div>
-                ))}
-              </div>
+            <Form.Group>
+              <Form.Label>Joindre un fichier</Form.Label>
+              <Form.Control type="file" name="file" onChange={handleInputChange} />
             </Form.Group>
 
-            <Form.Group className="mb-3">
-              <Form.Label>Utilisateurs assignés</Form.Label>
-              <div>
-                {assignForm.selectedUsers.map(user => (
-                  <Badge 
-                    key={user.id} 
-                    pill 
-                    bg="primary" 
-                    className="me-2 mb-2" 
-                    onClick={() => handleUserRemove(user.id)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    {user.username} ×
-                  </Badge>
-                ))}
-              </div>
+            <Form.Group className="mt-2">
+              <Form.Check type="checkbox" label="Envoyer une notification par email" name="notify" onChange={handleInputChange} />
             </Form.Group>
 
-            <Form.Group className="mb-3">
-              <Form.Label>Instructions</Form.Label>
-              <Form.Control
-                as="textarea"
-                rows={3}
-                value={assignForm.note}
-                onChange={(e) => setAssignForm({...assignForm, note: e.target.value})}
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Check
-                type="checkbox"
-                label="Envoyer une notification"
-                checked={assignForm.sendNotification}
-                onChange={(e) => setAssignForm({...assignForm, sendNotification: e.target.checked})}
-              />
-            </Form.Group>
-
-            <Button variant="primary" type="submit" disabled={loading}>
-              {loading ? 'Assignement en cours...' : 'Assigner la tâche'}
+            <Button className="mt-3" variant="primary" type="submit">
+              {modalType === 'new' ? 'Ajouter la tâche' : 'Assigner'}
             </Button>
           </Form>
         </Modal.Body>
       </Modal>
-
-      {/* Tableau des tâches */}
-      <div className="table-responsive mt-4">
-        <table className="table table-striped table-hover">
-          <thead className="table-dark">
-            <tr>
-              <th>Titre</th>
-              <th>Description</th>
-              <th>Échéance</th>
-              <th>Priorité</th>
-              <th>Fichier</th>
-              <th>Statut</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tasks.length > 0 ? (
-              tasks.map(task => (
-                <tr key={task.id}>
-                  <td>{task.title}</td>
-                  <td>{task.description || '-'}</td>
-                  <td>{task.due_date ? new Date(task.due_date).toLocaleDateString('fr-FR') : '-'}</td>
-                  <td>{task.priority}</td>
-                  <td>
-                    {task.file_path ? (
-                      <a
-                        href={`http://localhost:5000${task.file_path}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn btn-sm btn-outline-primary"
-                      >
-                        Télécharger
-                      </a>
-                    ) : 'Aucun'}
-                  </td>
-                  <td>
-                    {task.assigned_to ? 'Assignée' : 'Non assignée'}
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan="6" className="text-center py-4">
-                  Aucune tâche disponible
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 };
