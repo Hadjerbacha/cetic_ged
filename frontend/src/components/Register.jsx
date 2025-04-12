@@ -1,9 +1,16 @@
 import { useState } from "react";
 import axios from "axios";
 import styles from "./styles.module.css";
-const Login = () => {
-	const [data, setData] = useState({ email: "", password: "" });
+
+const Register = () => {
+	const [data, setData] = useState({
+		name: "",
+		email: "",
+		password: "",
+		role: "employe",
+	});
 	const [error, setError] = useState("");
+	const [success, setSuccess] = useState("");
 
 	const handleChange = ({ currentTarget: input }) => {
 		setData({ ...data, [input.name]: input.value });
@@ -12,11 +19,12 @@ const Login = () => {
 	const handleSubmit = async (e) => {
 		e.preventDefault();
 		try {
-			const url = "http://localhost:5000/api/auth/login";
-    const { data: res } = await axios.post(url, data);
-    localStorage.setItem("token", res.token);
-    localStorage.setItem("user", JSON.stringify(res.user));
-    window.location = "/workflowss";
+			const url = "http://localhost:5000/api/auth/register";
+			const { data: res } = await axios.post(url, data);
+			setSuccess(res.message);
+			setTimeout(() => {
+				window.location = "/";
+			}, 1500);
 		} catch (error) {
 			if (
 				error.response &&
@@ -32,8 +40,17 @@ const Login = () => {
 		<div className={styles.login_container}>
 			<div className={styles.login_form_container}>
 				<div className={styles.left}>
-					<form className={styles.form_container} onSubmit={handleSubmit} method="post">
-						<img className={styles.img} src="facture5.png" alt="logoapp"/><br/><br/>
+					<form className={styles.form_container} onSubmit={handleSubmit}>
+						<h2>Créer un compte</h2>
+						<input
+							type="text"
+							placeholder="Nom"
+							name="name"
+							onChange={handleChange}
+							value={data.name}
+							required
+							className={styles.input}
+						/>
 						<input
 							type="email"
 							placeholder="Email"
@@ -51,10 +68,26 @@ const Login = () => {
 							value={data.password}
 							required
 							className={styles.input}
-						/><br/>
+						/>
+						<select
+							name="role"
+							onChange={handleChange}
+							value={data.role}
+							required
+							className={styles.input}
+						>
+							<option value="">-- Choisir un rôle --</option>
+							<option value="admin">Administrateur</option>
+							<option value="directeur">Directeur</option>
+							<option value="chef">Chef de département</option>
+							<option value="employe">Employé</option>
+						</select>
+
 						{error && <div className={styles.error_msg}>{error}</div>}
+						{success && <div className={styles.success_msg}>{success}</div>}
+
 						<button type="submit" className={styles.green_btn}>
-							Connecter
+							Enregistrer
 						</button>
 					</form>
 				</div>
@@ -63,4 +96,4 @@ const Login = () => {
 	);
 };
 
-export default Login;
+export default Register;

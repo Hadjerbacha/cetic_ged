@@ -9,13 +9,20 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
-app.use(cors());
+const corsOptions = {
+    origin: "http://localhost:3000",  // Ton frontend React
+  };
+  app.use(cors(corsOptions));
+  
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
+app.use(express.urlencoded({ extended: true }));
+
 
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/tasks", workflowsRoutes);
+
 
 // Lancement du serveur
 app.listen(PORT, () => console.log(`Serveur lancé sur le port ${PORT}`));

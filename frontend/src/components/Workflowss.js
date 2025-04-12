@@ -42,7 +42,7 @@ const Workflowss = () => {
                   Authorization: `Bearer ${token}`, // Ajouter le token dans l'en-tête
                 },
               }),
-              axios.get('http://localhost:5000/api/auth/login', {
+              axios.get('http://localhost:5000/api/auth/users', {
                 headers: {
                   Authorization: `Bearer ${token}`, // Ajouter le token dans l'en-tête
                 },
