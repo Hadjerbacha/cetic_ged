@@ -5,7 +5,7 @@ import Login from './components/Login';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import Workflowss from './components/Workflowss';
 import Register from './components/Register';
-
+import Doc from './components/Document';
 function App() {
   return (
     <Router>
@@ -13,6 +13,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/document" element={<Doc />} />
           <Route path="/workflowss" element={<Workflowss />} />
         </Routes>
       </Container>

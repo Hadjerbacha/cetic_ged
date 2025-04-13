@@ -32,7 +32,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 } // Limite de 10 Mo
+  limits: { fileSize: 50 * 1024 * 1024 } // Limite de 10 Mo
 });
 
 // Initialisation de la table tasks
