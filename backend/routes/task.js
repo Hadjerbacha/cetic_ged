@@ -107,9 +107,9 @@ router.post('/', auth, upload.single('file'), async (req, res) => {
   }
 });
 
-// Assigner une tâche
+// 🔹 Route: Assigner une tâche
 router.post('/assign-task', auth, upload.single('file'), async (req, res) => {
-  const { note, notify, assigned_to } = req.body;
+  const { assignment_note, notify, assigned_to } = req.body;
   const file_path = req.file ? `/uploads/${req.file.filename}` : null;
   let userIds;
 
@@ -123,7 +123,6 @@ router.post('/assign-task', auth, upload.single('file'), async (req, res) => {
   }
 
   try {
-    // Vérifier que les utilisateurs existent
     const userCheck = await pool.query(
       'SELECT id FROM users WHERE id = ANY($1::int[])', 
       [userIds]
@@ -133,32 +132,24 @@ router.post('/assign-task', auth, upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'Un ou plusieurs utilisateurs non trouvés' });
     }
 
-    // Créer la tâche assignée
-    const query = `
+    const result = await pool.query(`
       INSERT INTO tasks (
         title, description, due_date, priority, 
         file_path, notify, assigned_to, 
-        assigned_by, assignment_note, status
+        assigned_by, assignment_note, assigned_at, status
       )
       VALUES (
         'Tâche assignée', $1, NOW()::date + INTERVAL '7 days', 
-        'Normale', $2, $3, $4, $5, $1, 'assigned'
+        'Normale', $2, $3, $4, $5, $1, NOW(), 'assigned'
       )
       RETURNING *;
-    `;
-    const values = [
-      note, file_path, notify, userIds, req.user.id
-    ];
+    `, [assignment_note, file_path, notify, userIds, req.user.id]);
 
-    const result = await pool.query(query, values);
     res.status(200).json(result.rows[0]);
   } catch (err) {
     console.error('Erreur:', err.stack);
     if (req.file) fs.unlink(req.file.path, () => {});
-    res.status(500).json({ 
-      error: 'Erreur serveur', 
-      details: err.message 
-    });
+    res.status(500).json({ error: 'Erreur serveur', details: err.message });
   }
 });
 

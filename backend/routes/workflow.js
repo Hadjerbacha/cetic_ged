@@ -175,6 +175,50 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ✏️ Modifier une tâche
+router.put('/:id', upload.single('file'), async (req, res) => {
+    const taskId = parseInt(req.params.id, 10);
+    const { title, description, due_date, priority, notify } = req.body;
+    let file_path = null;
+  
+    try {
+      // Récupérer l'ancienne tâche
+      const oldTaskResult = await pool.query('SELECT * FROM tasks WHERE id = $1', [taskId]);
+      if (oldTaskResult.rowCount === 0) {
+        logger.error(`Task not found for update: ${taskId}`);
+        return res.status(404).json({ message: 'Tâche non trouvée' });
+      }
+      const oldTask = oldTaskResult.rows[0];
+  
+      // Gestion du fichier : nouveau fichier = suppression de l’ancien
+      if (req.file) {
+        file_path = `/uploads/${req.file.filename}`;
+        if (oldTask.file_path) {
+          const oldPath = path.join(__dirname, '../', oldTask.file_path);
+          if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+        }
+      } else {
+        file_path = oldTask.file_path; // on conserve l’ancien si pas de nouveau fichier
+      }
+  
+      // Mise à jour dans la base
+      const result = await pool.query(
+        `UPDATE tasks 
+         SET title = $1, description = $2, due_date = $3, priority = $4, file_path = $5, notify = $6
+         WHERE id = $7 RETURNING *`,
+        [title, description, due_date, priority, file_path, notify === 'true', taskId]
+      );
+  
+      logger.info(`Task updated: ${taskId}`);
+      res.json(result.rows[0]);
+    } catch (err) {
+      logger.error(`Error updating task ${taskId}: ${err.message}`);
+      if (req.file) fs.unlink(req.file.path, () => {});
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  
 router.delete('/:id', async (req, res) => {
   const taskId = parseInt(req.params.id, 10);
   try {
@@ -191,4 +235,29 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur' });
   }
 });
+
+// 🔄 Mettre à jour uniquement le status
+router.patch('/:id/status', async (req, res) => {
+    const taskId = parseInt(req.params.id, 10);
+    const { status } = req.body;
+  
+    try {
+      const result = await pool.query(
+        'UPDATE tasks SET status = $1 WHERE id = $2 RETURNING *',
+        [status, taskId]
+      );
+  
+      if (result.rowCount === 0) {
+        logger.error(`Task not found for status update: ${taskId}`);
+        return res.status(404).json({ message: 'Tâche non trouvée' });
+      }
+  
+      logger.info(`Task ${taskId} status updated to ${status}`);
+      res.json(result.rows[0]);
+    } catch (err) {
+      logger.error(`Error updating status for task ${taskId}: ${err.message}`);
+      res.status(500).json({ error: err.message });
+    }
+  });
+  
 module.exports = router;

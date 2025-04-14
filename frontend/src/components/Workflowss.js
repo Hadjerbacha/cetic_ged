@@ -4,9 +4,12 @@ import { Modal, Button, Form, Table, Pagination } from 'react-bootstrap';
 import Select from 'react-select';
 
 const Workflowss = () => {
-  const [showModal, setShowModal] = useState(false);
-  const [modalType, setModalType] = useState('new');
   const [tasks, setTasks] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [showModal, setShowModal] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -15,11 +18,8 @@ const Workflowss = () => {
     assigned_to: [],
     file: null,
     notify: false,
-    assignment_note: ''
   });
-  const [searchTerm, setSearchTerm] = useState('');
-  const [users, setUsers] = useState([]);
-  const [currentPage, setCurrentPage] = useState(1);
+
   const tasksPerPage = 5;
 
   useEffect(() => {
@@ -29,44 +29,43 @@ const Workflowss = () => {
 
   const fetchTasks = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/tasks');
-      setTasks(response.data);
+      const res = await axios.get('http://localhost:5000/api/tasks/');
+      setTasks(res.data);
     } catch (err) {
-      console.error('Erreur de chargement des tâches', err);
+      console.error('Erreur chargement des tâches', err);
     }
   };
 
   const fetchUsers = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/auth/users');
-      const formattedUsers = response.data.map(user => ({
-        label: `${user.name} ${user.prenom}`,
-        value: user.id
-      }));
-      setUsers(formattedUsers);
+      const res = await axios.get('http://localhost:5000/api/auth/users/');
+      const formatted = res.data.map(u => ({ value: u.id, label: `${u.name} ${u.prenom}` }));
+      setUsers(formatted);
     } catch (err) {
-      console.error('Erreur de chargement des utilisateurs', err);
+      console.error('Erreur chargement des utilisateurs', err);
     }
   };
 
-  const handleInputChange = e => {
-    const { name, value, type, checked, files } = e.target;
-    if (type === 'checkbox') {
-      setFormData({ ...formData, [name]: checked });
-    } else if (type === 'file') {
-      setFormData({ ...formData, file: files[0] });
+  const openModal = task => {
+    if (task) {
+      setEditingTask(task);
+      setFormData({
+        title: task.title,
+        description: task.description,
+        due_date: task.due_date?.split('T')[0],
+        priority: task.priority,
+        assigned_to: task.assigned_ids || [],
+        file: null,
+        notify: false
+      });
     } else {
-      setFormData({ ...formData, [name]: value });
+      resetForm();
     }
-  };
-
-  const handleModalOpen = type => {
-    setModalType(type);
     setShowModal(true);
   };
 
-  const handleModalClose = () => {
-    setShowModal(false);
+  const resetForm = () => {
+    setEditingTask(null);
     setFormData({
       title: '',
       description: '',
@@ -74,97 +73,117 @@ const Workflowss = () => {
       priority: '',
       assigned_to: [],
       file: null,
-      notify: false,
-      assignment_note: ''
+      notify: false
     });
+  };
+
+  const closeModal = () => {
+    resetForm();
+    setShowModal(false);
+  };
+
+  const handleInputChange = e => {
+    const { name, value, type, checked, files } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : type === 'file' ? files[0] : value
+    }));
+  };
+
+  const handleSelectChange = selected => {
+    setFormData(prev => ({ ...prev, assigned_to: selected.map(s => s.value) }));
   };
 
   const handleSubmit = async e => {
     e.preventDefault();
     const data = new FormData();
-
-    if (modalType === 'new') {
-      data.append('title', formData.title);
-      data.append('description', formData.description);
-      data.append('due_date', formData.due_date);
-      data.append('priority', formData.priority);
-      data.append('assigned_to', formData.assigned_to);
-    } else {
-      data.append('assignment_note', formData.assignment_note);
-      data.append('assigned_to', JSON.stringify(formData.assigned_to));
+    for (const key in formData) {
+      if (key === 'assigned_to') {
+        data.append(key, JSON.stringify(formData[key]));
+      } else if (formData[key]) {
+        data.append(key, formData[key]);
+      }
     }
 
-    if (formData.file) data.append('file', formData.file);
-    data.append('notify', formData.notify);
+    const endpoint = editingTask
+      ? `http://localhost:5000/api/tasks/${editingTask.id}`
+      : 'http://localhost:5000/api/tasks/';
 
     try {
-      const endpoint = modalType === 'new' ? 'http://localhost:5000/api/tasks' : 'http://localhost:5000/api/assign-task';
-      await axios.post(endpoint, data, {
+      await axios({
+        method: editingTask ? 'put' : 'post',
+        url: endpoint,
+        data,
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       fetchTasks();
-      handleModalClose();
+      closeModal();
     } catch (err) {
-      console.error("Erreur lors de l'envoi du formulaire :", err);
+      console.error("Erreur d'enregistrement :", err);
     }
   };
 
-  const handleSelectChange = selectedOptions => {
-    setFormData({ ...formData, assigned_to: selectedOptions.map(option => option.value) });
-  };
-
-  const filteredTasks = tasks.filter(task =>
-    task.title.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const indexOfLastTask = currentPage * tasksPerPage;
-  const indexOfFirstTask = indexOfLastTask - tasksPerPage;
-  const currentTasks = filteredTasks.slice(indexOfFirstTask, indexOfLastTask);
-
-  const paginate = pageNumber => setCurrentPage(pageNumber);
-
-  const handleDelete = async (taskId) => {
-    // Confirmation de suppression
-    const confirmDelete = window.confirm("Êtes-vous sûr de vouloir supprimer cette tâche ?");
-    
-    if (confirmDelete) {
+  const handleDelete = async id => {
+    if (window.confirm("Confirmer la suppression ?")) {
       try {
-        // Suppression de la tâche avec axios
-        await axios.delete(`http://localhost:5000/api/tasks/${taskId}`);
-        alert('Tâche supprimée avec succès !');
-        fetchTasks(); // Recharger les tâches après suppression
+        await axios.delete(`http://localhost:5000/api/tasks/${id}`);
+        fetchTasks();
       } catch (err) {
-        console.error("Erreur lors de la suppression de la tâche", err);
-        alert("Une erreur est survenue lors de la suppression de la tâche.");
+        console.error("Erreur suppression :", err);
       }
     }
   };
+
+  const filteredTasks = tasks.filter(task =>
+    task.title?.toLowerCase().includes(search.toLowerCase()) ||
+    task.description?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const currentTasks = filteredTasks.slice((currentPage - 1) * tasksPerPage, currentPage * tasksPerPage);
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'pending': return 'secondary';
+      case 'assigned': return 'info';
+      case 'in_progress': return 'warning';
+      case 'completed': return 'success';
+      default: return 'light';
+    }
+  };
   
+  const handleStatusChange = async (taskId, newStatus) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/tasks/${taskId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (!res.ok) throw new Error('Erreur lors de la mise à jour du statut');
+      const updatedTask = await res.json();
+      setTasks(tasks.map(task => task.id === taskId ? updatedTask : task));
+    } catch (err) {
+      console.error(err);
+      alert("Impossible de changer le statut !");
+    }
+  };
   
   return (
-    <div className="container mt-4">
+    <div className="container-fluid mt-4">
       <h2 className="mb-4">Gestion des Workflows</h2>
 
-      <div className="d-flex justify-content-between mb-3">
-        <Form.Select
-          onChange={e => handleModalOpen(e.target.value)}
-          className="w-auto"
-        >
-          <option>-- Choisir une action --</option>
-          <option value="new">Nouvelle tâche</option>
-          <option value="assign">Assigner tâche</option>
-        </Form.Select>
-
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <Button onClick={() => openModal(null)}>Nouvelle Tâche</Button>
         <Form.Control
           type="text"
-          placeholder="Rechercher une tâche"
-          className="w-25"
-          onChange={e => setSearchTerm(e.target.value)}
+          placeholder="Rechercher..."
+          style={{ width: '300px' }}
+          onChange={e => setSearch(e.target.value)}
         />
       </div>
 
-      {/* Tableau des tâches */}
-      <Table striped bordered hover>
+      <Table striped bordered hover responsive>
         <thead>
           <tr>
             <th>Titre</th>
@@ -174,7 +193,6 @@ const Workflowss = () => {
             <th>Fichier</th>
             <th>Statut</th>
             <th>Assignée à</th>
-            <th>Assignée par</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -187,17 +205,32 @@ const Workflowss = () => {
               <td>{task.priority}</td>
               <td>
                 {task.file_path && (
-                  <a href={`http://localhost:5000/${task.file_path}`} target="_blank" rel="noreferrer">
-                    Voir le fichier
-                  </a>
+                  <a href={`http://localhost:5000${task.file_path}`} target="_blank" rel="noreferrer">Voir</a>
                 )}
               </td>
-              <td>{task.status}</td>
-              <td>{task.assigned_to}</td>
-              <td>{task.assigned_by}</td>
               <td>
-                <Button variant="warning" onClick={() => handleModalOpen('edit', task)}>Modifier</Button>
-                <Button variant="danger" onClick={() => handleDelete(task.id)} className="ml-2">Supprimer</Button>
+  <select
+    value={task.status}
+    className={`form-select form-select-sm bg-${getStatusColor(task.status)} text-white`}
+    onChange={(e) => handleStatusChange(task.id, e.target.value)}
+  >
+    <option value="pending" className="text-dark">⏳ En attente</option>
+    <option value="assigned" className="text-dark">📌 Assignée</option>
+    <option value="in_progress" className="text-dark">🔧 En cours</option>
+    <option value="completed" className="text-dark">✅ Terminée</option>
+  </select>
+</td>
+
+<td>
+  {users
+    .filter(u => task.assigned_to?.includes(u.value))
+    .map(u => u.label)
+    .join(', ')}
+</td>
+
+              <td>
+                <Button size="sm" variant="warning" onClick={() => openModal(task)}>Modifier</Button>{' '}
+                <Button size="sm" variant="danger" onClick={() => handleDelete(task.id)}>Supprimer</Button>
               </td>
             </tr>
           ))}
@@ -205,77 +238,63 @@ const Workflowss = () => {
       </Table>
 
       <Pagination>
-        {Array.from({ length: Math.ceil(filteredTasks.length / tasksPerPage) }, (_, i) => (
-          <Pagination.Item key={i + 1} onClick={() => paginate(i + 1)} active={i + 1 === currentPage}>
-            {i + 1}
+        {Array.from({ length: Math.ceil(filteredTasks.length / tasksPerPage) }, (_, idx) => (
+          <Pagination.Item
+            key={idx + 1}
+            active={idx + 1 === currentPage}
+            onClick={() => setCurrentPage(idx + 1)}
+          >
+            {idx + 1}
           </Pagination.Item>
         ))}
       </Pagination>
 
-      {/* Modal d'ajout / assignation */}
-      <Modal show={showModal} onHide={handleModalClose}>
+      {/* MODAL */}
+      <Modal show={showModal} onHide={closeModal}>
         <Modal.Header closeButton>
-          <Modal.Title>{modalType === 'new' ? 'Nouvelle tâche' : 'Assigner une tâche'}</Modal.Title>
+          <Modal.Title>{editingTask ? 'Modifier Tâche' : 'Nouvelle Tâche'}</Modal.Title>
         </Modal.Header>
         <Modal.Body>
           <Form onSubmit={handleSubmit}>
-            {modalType === 'new' && (
-              <>
-                <Form.Group>
-                  <Form.Label>Titre</Form.Label>
-                  <Form.Control type="text" name="title" onChange={handleInputChange} required />
-                </Form.Group>
-                <Form.Group>
-                  <Form.Label>Description</Form.Label>
-                  <Form.Control as="textarea" name="description" onChange={handleInputChange} required />
-                </Form.Group>
-                <Form.Group>
-                  <Form.Label>Date d’échéance</Form.Label>
-                  <Form.Control type="date" name="due_date" onChange={handleInputChange} required />
-                </Form.Group>
-                <Form.Group>
-                  <Form.Label>Priorité</Form.Label>
-                  <Form.Select name="priority" onChange={handleInputChange}>
-                    <option value="">Choisir...</option>
-                    <option value="Haute">Haute</option>
-                    <option value="Moyenne">Moyenne</option>
-                    <option value="Basse">Basse</option>
-                  </Form.Select>
-                </Form.Group>
-              </>
-            )}
-            {modalType === 'assign' && (
-              <>
-                <Form.Group>
-                  <Form.Label>Note d’assignation</Form.Label>
-                  <Form.Control as="textarea" name="assignment_note" onChange={handleInputChange} />
-                </Form.Group>
-              </>
-            )}
-
+            <Form.Group>
+              <Form.Label>Titre</Form.Label>
+              <Form.Control name="title" value={formData.title} onChange={handleInputChange} required />
+            </Form.Group>
+            <Form.Group>
+              <Form.Label>Description</Form.Label>
+              <Form.Control as="textarea" name="description" value={formData.description} onChange={handleInputChange} required />
+            </Form.Group>
+            <Form.Group>
+              <Form.Label>Échéance</Form.Label>
+              <Form.Control type="date" name="due_date" value={formData.due_date} onChange={handleInputChange} required />
+            </Form.Group>
+            <Form.Group>
+              <Form.Label>Priorité</Form.Label>
+              <Form.Select name="priority" value={formData.priority} onChange={handleInputChange}>
+                <option value="">Choisir...</option>
+                <option value="Haute">Haute</option>
+                <option value="Moyenne">Moyenne</option>
+                <option value="Basse">Basse</option>
+              </Form.Select>
+            </Form.Group>
             <Form.Group>
               <Form.Label>Assigner à</Form.Label>
               <Select
                 isMulti
-                name="assigned_to"
                 options={users}
+                value={users.filter(u => formData.assigned_to.includes(u.value))}
                 onChange={handleSelectChange}
-                closeMenuOnSelect={false}
-                placeholder="Rechercher un utilisateur"
               />
             </Form.Group>
-
             <Form.Group>
-              <Form.Label>Joindre un fichier</Form.Label>
+              <Form.Label>Fichier</Form.Label>
               <Form.Control type="file" name="file" onChange={handleInputChange} />
             </Form.Group>
-
             <Form.Group className="mt-2">
-              <Form.Check type="checkbox" label="Envoyer une notification par email" name="notify" onChange={handleInputChange} />
+              <Form.Check type="checkbox" name="notify" label="Notifier par Email" checked={formData.notify} onChange={handleInputChange} />
             </Form.Group>
-
-            <Button className="mt-3" variant="primary" type="submit">
-              {modalType === 'new' ? 'Ajouter la tâche' : 'Assigner'}
+            <Button variant="primary" type="submit" className="mt-3">
+              {editingTask ? 'Modifier' : 'Créer'}
             </Button>
           </Form>
         </Modal.Body>

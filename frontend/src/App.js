@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import { Container } from 'react-bootstrap'; // On garde la mise en page
 import Login from './components/Login';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import Workflowss from './components/Workflowss';
+import Workflows from './components/Workflowss';
 import Register from './components/Register';
 import Doc from './components/Document';
 function App() {
@@ -14,7 +14,7 @@ function App() {
           <Route path="/" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/document" element={<Doc />} />
-          <Route path="/workflowss" element={<Workflowss />} />
+          <Route path="/workflows" element={<Workflows />} />
         </Routes>
       </Container>
     </Router>

@@ -1,29 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Modal, Button, Form, Badge } from 'react-bootstrap';
-import './workflow.css';
-import AssignTask from './AssignTask';
+import { Modal, Button, Form, Table, Pagination } from 'react-bootstrap';
+import Select from 'react-select';
 
 const Workflow = () => {
-  const [tasks, setTasks] = useState([]);
   const [showModal, setShowModal] = useState(false);
-  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [modalType, setModalType] = useState('new');
+  const [tasks, setTasks] = useState([]);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     due_date: '',
-    priority: 'Normal',
-    assigned_to: '',
+    priority: '',
+    assigned_to: [],
     file: null,
-    notify: false
+    notify: false,
+    assignment_note: ''
   });
-  const [mode, setMode] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [users, setUsers] = useState([]);
-  const [selectedUsers, setSelectedUsers] = useState([]);
-  const [document, setDocument] = useState(null);
-  const [searchUser, setSearchUser] = useState('');
-  const [note, setNote] = useState('');
-  const [sendNotification, setSendNotification] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const tasksPerPage = 5;
 
   useEffect(() => {
     fetchTasks();
@@ -32,267 +29,261 @@ const Workflow = () => {
 
   const fetchTasks = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/tasks');
-      setTasks(res.data);
+      const response = await axios.get('http://localhost:5000/api/tasks/');
+      setTasks(response.data);
     } catch (err) {
-      console.error(err);
+      console.error('Erreur de chargement des tâches', err);
     }
   };
 
   const fetchUsers = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/users');
-      setUsers(res.data);
+      const response = await axios.get('http://localhost:5000/api/auth/users/');
+      const formattedUsers = response.data.map(user => ({
+        label: `${user.name} ${user.prenom}`,
+        value: user.id
+      }));
+      setUsers(formattedUsers);
     } catch (err) {
-      console.error(err);
+      console.error('Erreur de chargement des utilisateurs', err);
     }
   };
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    if (type === 'file') {
-      setFormData({ ...formData, file: e.target.files[0] });
+  const handleInputChange = e => {
+    const { name, value, type, checked, files } = e.target;
+    if (type === 'checkbox') {
+      setFormData({ ...formData, [name]: checked });
+    } else if (type === 'file') {
+      setFormData({ ...formData, file: files[0] });
     } else {
-      setFormData({ ...formData, [name]: type === 'checkbox' ? checked : value });
+      setFormData({ ...formData, [name]: value });
     }
   };
 
-  const handleSubmitNewTask = async (e) => {
+  const handleModalOpen = type => {
+    setModalType(type);
+    setShowModal(true);
+  };
+
+  const handleModalClose = () => {
+    setShowModal(false);
+    setFormData({
+      title: '',
+      description: '',
+      due_date: '',
+      priority: '',
+      assigned_to: [],
+      file: null,
+      notify: false,
+      assignment_note: ''
+    });
+  };
+
+  const handleSubmit = async e => {
     e.preventDefault();
     const data = new FormData();
-    Object.entries(formData).forEach(([key, value]) => {
-      if (key === 'file' && value) data.append('file', value);
-      else data.append(key, value);
-    });
-    data.append('workflow_id', 1); // temporairement fixe
 
-    try {
-      await axios.post('http://localhost:5000/api/tasks', data);
-      fetchTasks();
-      setShowModal(false);
-      setFormData({
-        title: '', description: '', due_date: '', priority: 'Normal',
-        assigned_to: '', file: null, notify: false
-      });
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  
-  const handleModeChange = (e) => {
-    const selectedMode = e.target.value;
-    setMode(selectedMode);
-    setShowModal(selectedMode !== '');
-  };
-  
-  useEffect(() => {
-    fetchAssignTasks();
-    fetchAssignUsers();
-  }, []);
-
-  const fetchAssignTasks = async () => {
-    try {
-      const res = await axios.get('http://localhost:5000/api/tasks');
-      setTasks(res.data);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const fetchAssignUsers = async () => {
-    try {
-      const res = await axios.get('http://localhost:5000/api/users');
-      setUsers(res.data);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleAssignChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    if (type === 'file') {
-      setFormData({ ...formData, file: e.target.files[0] });
+    if (modalType === 'new') {
+      data.append('title', formData.title);
+      data.append('description', formData.description);
+      data.append('due_date', formData.due_date);
+      data.append('priority', formData.priority);
+      data.append('assigned_to', formData.assigned_to);
     } else {
-      setFormData({ ...formData, [name]: type === 'checkbox' ? checked : value });
+      data.append('assignment_note', formData.assignment_note);
+      data.append('assigned_to', JSON.stringify(formData.assigned_to));
     }
-  };
 
-  
-
-  const handleUserSelect = (user) => {
-    if (!selectedUsers.find((u) => u.id === user.id)) {
-      setSelectedUsers([...selectedUsers, user]);
-    }
-  };
-
-  const handleUserRemove = (userId) => {
-    setSelectedUsers(selectedUsers.filter((u) => u.id !== userId));
-  };
-
-  const handleSubmitAssignTask = async (e) => {
-    e.preventDefault();
-
-    const formData = new FormData();
-    formData.append('file', document);
-    formData.append('note', note);
-    formData.append('notify', sendNotification);
-    formData.append('assigned_to', JSON.stringify(selectedUsers.map((u) => u.id)));
+    if (formData.file) data.append('file', formData.file);
+    data.append('notify', formData.notify);
 
     try {
-      await axios.post('http://localhost:5000/api/assign-task', formData);
-      setShowModal(false);
+      const endpoint = modalType === 'new' ? 'http://localhost:5000/api/tasks/' : 'http://localhost:5000/api/tasks/assign-task';
+      await axios.post(endpoint, data, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      fetchTasks();
+      handleModalClose();
     } catch (err) {
-      console.error(err);
+      console.error("Erreur lors de l'envoi du formulaire :", err);
     }
   };
 
-  const filteredUsers = users.filter((u) =>
-    u.username.toLowerCase().includes(searchUser.toLowerCase())
-  );
-
-  const handleAssignModeChange = (e) => {
-    setMode(e.target.value);
-    setShowAssignModal(true);
+  const handleSelectChange = selectedOptions => {
+    setFormData({ ...formData, assigned_to: selectedOptions.map(option => option.value) });
   };
+  const filteredTasks = tasks.filter(task =>
+    (task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+     task.description?.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+  
+  
+  
 
+  const indexOfLastTask = currentPage * tasksPerPage;
+  const indexOfFirstTask = indexOfLastTask - tasksPerPage;
+  const currentTasks = filteredTasks.slice(indexOfFirstTask, indexOfLastTask);
 
+  const paginate = pageNumber => setCurrentPage(pageNumber);
+
+  const handleDelete = async (taskId) => {
+    // Confirmation de suppression
+    const confirmDelete = window.confirm("Êtes-vous sûr de vouloir supprimer cette tâche ?");
+    
+    if (confirmDelete) {
+      try {
+        // Suppression de la tâche avec axios
+        await axios.delete(`http://localhost:5000/api/tasks/${taskId}`);
+        alert('Tâche supprimée avec succès !');
+        fetchTasks(); // Recharger les tâches après suppression
+      } catch (err) {
+        console.error("Erreur lors de la suppression de la tâche", err);
+        alert("Une erreur est survenue lors de la suppression de la tâche.");
+      }
+    }
+  };
+  
+  
   return (
-    <div className="container mt-5">
+    <div className="container-fluid mt-4">
+
       <h2 className="mb-4">Gestion des Workflows</h2>
 
-      <Form.Group className="mb-3">
-        <Form.Label>Choisir une action :</Form.Label>
-        <Form.Select onChange={handleModeChange} value={mode}>
-          <option value="">-- Sélectionner --</option>
+      <div className="d-flex justify-content-between mb-3">
+        <Form.Select
+          onChange={e => handleModalOpen(e.target.value)}
+          className="w-auto"
+        >
+          <option>-- Choisir une action --</option>
           <option value="new">Nouvelle tâche</option>
-          <option value="assign">Assigner une tâche</option>
+          <option value="assign">Assigner tâche</option>
         </Form.Select>
-      </Form.Group>
 
-      {/* Modal de création d'une nouvelle tâche */}
-      <Modal show={showModal} onHide={() => { setShowModal(false); setMode(''); }}>
-      <Modal.Header closeButton>
-        <Modal.Title>
-          {mode === 'new' ? 'Nouvelle Tâche' : mode === 'assign' ? 'Assigner une Tâche' : ''}
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body>
-          {mode === 'new' && (
-            // Ton formulaire de création ici
-            <Form onSubmit={handleSubmitNewTask}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Titre</Form.Label>
-                    <Form.Control type="text" name="title" value={formData.title} onChange={handleChange} required />
-                  </Form.Group>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Description</Form.Label>
-                    <Form.Control as="textarea" name="description" value={formData.description} onChange={handleChange} />
-                  </Form.Group>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Échéance</Form.Label>
-                    <Form.Control type="date" name="due_date" value={formData.due_date} onChange={handleChange} required />
-                  </Form.Group>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Priorité</Form.Label>
-                    <Form.Select name="priority" value={formData.priority} onChange={handleChange}>
-                      <option value="Haute">Haute</option>
-                      <option value="Normale">Normale</option>
-                      <option value="Basse">Basse</option>
-                    </Form.Select>
-                  </Form.Group>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Assigner à</Form.Label>
-                    <Form.Select name="assigned_to" value={formData.assigned_to} onChange={handleChange}>
-                      <option value="">Choisir un utilisateur</option>
-                      {users.map((u) => (
-                        <option key={u.id} value={u.id}>{u.username}</option>
-                      ))}
-                    </Form.Select>
-                  </Form.Group>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Fichier</Form.Label>
-                    <Form.Control type="file" name="file" onChange={handleChange} />
-                  </Form.Group>
-                  <Form.Group className="mb-3">
-                    <Form.Check type="checkbox" label="Envoyer une notification par email" name="notify" checked={formData.notify} onChange={handleChange} />
-                  </Form.Group>
-                  <Button variant="success" type="submit">Ajouter</Button>
-                </Form>
-          )}
-
-          {mode === 'assign' && (
-            // Formulaire pour assigner une tâche
-            <Form onSubmit={handleSubmitAssignTask}>
-              <Form.Group className="mb-3">
-                <Form.Label>Choisir un document</Form.Label>
-                <Form.Control type="file" onChange={(e) => setDocument(e.target.files[0])} />
-              </Form.Group>
-
-              <Form.Group className="mb-3">
-                <Form.Label>Rechercher un utilisateur</Form.Label>
-                <Form.Control type="text" placeholder="Nom ou rôle" value={searchUser} onChange={(e) => setSearchUser(e.target.value)} />
-                <div className="mt-2" style={{ maxHeight: '150px', overflowY: 'auto' }}>
-                  {filteredUsers.map((user) => (
-                    <div key={user.id} className="d-flex justify-content-between align-items-center border p-2 mb-1">
-                      <span>{user.username} ({user.role})</span>
-                      <Button size="sm" onClick={() => handleUserSelect(user)}>Ajouter</Button>
-                    </div>
-                  ))}
-                </div>
-              </Form.Group>
-
-              <div className="mb-3">
-                <Form.Label>Utilisateurs assignés</Form.Label>
-                <div>
-                  {selectedUsers.map((u) => (
-                    <Badge key={u.id} pill bg="primary" className="me-2 mb-2" onClick={() => handleUserRemove(u.id)} style={{ cursor: 'pointer' }}>
-                      {u.username} ×
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-
-              <Form.Group className="mb-3">
-                <Form.Label>Note / Instructions</Form.Label>
-                <Form.Control as="textarea" rows={3} value={note} onChange={(e) => setNote(e.target.value)} />
-              </Form.Group>
-
-              <Form.Check type="checkbox" label="Envoyer une notification par email" checked={sendNotification} onChange={(e) => setSendNotification(e.target.checked)} />
-
-              <Button variant="primary" type="submit">Assigner</Button>
-            </Form>
-          )}
-
-    </Modal.Body>
-  </Modal>
-
-
+        <Form.Control
+          type="text"
+          placeholder="Rechercher une tâche"
+          className="w-25"
+          onChange={e => setSearchTerm(e.target.value)}
+        />
+      </div>
+<div>
       {/* Tableau des tâches */}
-      <table className="table table-striped mt-4">
-        <thead className="table-dark">
+      <Table striped bordered hover >
+        <thead>
           <tr>
             <th>Titre</th>
             <th>Description</th>
             <th>Échéance</th>
             <th>Priorité</th>
-            <th>Assigné à</th>
             <th>Fichier</th>
+            <th>Statut</th>
+            <th>Assignée à</th>
+            <th>Assignée par</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {tasks.map((task) => (
+          {currentTasks.map(task => (
             <tr key={task.id}>
               <td>{task.title}</td>
               <td>{task.description}</td>
-              <td>{task.due_date}</td>
+              <td>{new Date(task.due_date).toLocaleDateString()}</td>
               <td>{task.priority}</td>
+              <td>
+                {task.file_path && (
+                  <a href={`http://localhost:5000/${task.file_path}`} target="_blank" rel="noreferrer">
+                    Voir le fichier
+                  </a>
+                )}
+              </td>
+              <td>{task.status}</td>
               <td>{task.assigned_to}</td>
-              <td>{task.file_path ? <a href={`http://localhost:5000/${task.file_path}`} target="_blank" rel="noreferrer">Voir</a> : 'Aucun'}</td>
+              <td>{task.assigned_by}</td>
+              <td>
+                <Button variant="warning" onClick={() => handleModalOpen('edit', task)}>Modifier</Button>
+                <Button variant="danger" onClick={() => handleDelete(task.id)} className="ml-2">Supprimer</Button>
+              </td>
             </tr>
           ))}
         </tbody>
-      </table>
+      </Table>
+      </div>
+      <Pagination>
+        {Array.from({ length: Math.ceil(filteredTasks.length / tasksPerPage) }, (_, i) => (
+          <Pagination.Item key={i + 1} onClick={() => paginate(i + 1)} active={i + 1 === currentPage}>
+            {i + 1}
+          </Pagination.Item>
+        ))}
+      </Pagination>
+
+      {/* Modal d'ajout / assignation */}
+      <Modal show={showModal} onHide={handleModalClose}>
+        <Modal.Header closeButton>
+          <Modal.Title>{modalType === 'new' ? 'Nouvelle tâche' : 'Assigner une tâche'}</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form onSubmit={handleSubmit}>
+            {modalType === 'new' && (
+              <>
+                <Form.Group>
+                  <Form.Label>Titre</Form.Label>
+                  <Form.Control type="text" name="title" onChange={handleInputChange} required />
+                </Form.Group>
+                <Form.Group>
+                  <Form.Label>Description</Form.Label>
+                  <Form.Control as="textarea" name="description" onChange={handleInputChange} required />
+                </Form.Group>
+                <Form.Group>
+                  <Form.Label>Date d’échéance</Form.Label>
+                  <Form.Control type="date" name="due_date" onChange={handleInputChange} required />
+                </Form.Group>
+                <Form.Group>
+                  <Form.Label>Priorité</Form.Label>
+                  <Form.Select name="priority" onChange={handleInputChange}>
+                    <option value="">Choisir...</option>
+                    <option value="Haute">Haute</option>
+                    <option value="Moyenne">Moyenne</option>
+                    <option value="Basse">Basse</option>
+                  </Form.Select>
+                </Form.Group>
+              </>
+            )}
+            {modalType === 'assign' && (
+              <>
+                <Form.Group>
+                  <Form.Label>Note d’assignation</Form.Label>
+                  <Form.Control as="textarea" name="assignment_note" onChange={handleInputChange} />
+                </Form.Group>
+              </>
+            )}
+
+            <Form.Group>
+              <Form.Label>Assigner à</Form.Label>
+              <Select
+                isMulti
+                name="assigned_to"
+                options={users}
+                onChange={handleSelectChange}
+                closeMenuOnSelect={false}
+                placeholder="Rechercher un utilisateur"
+              />
+            </Form.Group>
+
+            <Form.Group>
+              <Form.Label>Joindre un fichier</Form.Label>
+              <Form.Control type="file" name="file" onChange={handleInputChange} />
+            </Form.Group>
+
+            <Form.Group className="mt-2">
+              <Form.Check type="checkbox" label="Envoyer une notification par email" name="notify" onChange={handleInputChange} />
+            </Form.Group>
+
+            <Button className="mt-3" variant="primary" type="submit">
+              {modalType === 'new' ? 'Ajouter la tâche' : 'Assigner'}
+            </Button>
+          </Form>
+        </Modal.Body>
+      </Modal>
     </div>
   );
 };

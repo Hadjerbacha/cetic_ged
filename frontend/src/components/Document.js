@@ -30,7 +30,7 @@ const Document = () => {
         console.error('Erreur lors du chargement des documents', err);
         setErrorMessage("Erreur d'autorisation ou de connexion.");
       });
-  }, []);
+  }, [token]);
 
   const handleUpload = async () => {
     if (!pendingFile || !pendingName) {
